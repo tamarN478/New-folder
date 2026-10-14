@@ -1,68 +1,116 @@
-"""Streamlit application for uploading a dataset and performing basic EDA."""
+"""streamlit application for uploading a dataset, performing basic EDA, and creating interactive charts."""
 
 from pathlib import Path
-
+import plotly.express as px
 import pandas as pd
 import streamlit as st
 
-
 st.set_page_config(
-    page_title="Dataset Explorer",
+    page_title="Dataset Explorer & Chart Builder",
     page_icon=":bar_chart:",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
+st.title("Dataset Explorer & Interactive Chart Builder")
 
-def load_dataset(uploaded_file: st.runtime.uploaded_file_manager.UploadedFile) -> pd.DataFrame:
-    """Load a supported uploaded file into a DataFrame."""
-    extension = Path(uploaded_file.name).suffix.lower()
+# Sidebar file uploader
+st.sidebar.header("Upload Dataset")
+uploaded_file = st.sidebar.file_uploader(
+    "Choose a CSV or Excel file", type=["csv", "xlsx", "xls"]
+)
 
-    if extension == ".csv":
-        return pd.read_csv(uploaded_file)
-    if extension in {".xlsx", ".xls"}:
-        return pd.read_excel(uploaded_file)
-
-    raise ValueError("Unsupported file type. Please upload a CSV or Excel file.")
-
-
-st.title("Dataset Explorer")
-st.write("Upload a CSV or Excel file to inspect its structure and summary statistics.")
-
-with st.sidebar:
-    st.header("Upload dataset")
-    uploaded_file = st.file_uploader(
-        "Choose a CSV or Excel file",
-        type=["csv", "xlsx", "xls"],
-        help="Supported formats: .csv, .xlsx, and .xls",
-    )
-
-if uploaded_file is None:
-    st.info("Use the file uploader in the sidebar to get started.")
-else:
+if uploaded_file is not None:
     try:
-        df = load_dataset(uploaded_file)
-    except (ValueError, pd.errors.ParserError, ImportError, OSError) as error:
-        st.error(f"Could not load {uploaded_file.name}: {error}")
-    else:
-        st.header("Dataset Overview")
+        # Load dataset based on extension
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
 
-        row_count, column_count = df.shape
-        metric_columns = st.columns(2)
-        metric_columns[0].metric("Rows", f"{row_count:,}")
-        metric_columns[1].metric("Columns", f"{column_count:,}")
+        # Tab navigation for EDA and Chart Builder
+        tab_eda, tab_charts = st.tabs(["📊 Exploratory Data Analysis", "📈 Chart Builder"])
 
-        st.subheader("Data preview")
-        st.dataframe(df.head(), use_container_width=True)
+        # --- TAB 1: EDA ---
+        with tab_eda:
+            st.subheader("Data Preview")
+            st.dataframe(df.head(), width=1200)
 
-        with st.expander("Summary statistics"):
-            st.dataframe(df.describe(include="all"), use_container_width=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Rows", df.shape[0])
+            with col2:
+                st.metric("Total Columns", df.shape[1])
 
-        st.subheader("Missing values by column")
-        missing_values = pd.DataFrame(
-            {
-                "Missing values": df.isna().sum(),
-                "Missing percentage": (df.isna().mean() * 100).round(2),
-            }
-        )
-        st.dataframe(missing_values, use_container_width=True)
+            with st.expander("Summary Statistics"):
+                st.dataframe(df.describe(include="all"), width=1200)
+
+            with st.expander("Missing Values Overview"):
+                missing = df.isnull().sum()
+                missing_pct = (missing / len(df)) * 100
+                missing_df = pd.DataFrame(
+                    {"Missing Values": missing, "Percentage (%)": missing_pct}
+                )
+                st.dataframe(missing_df, width=1200)
+
+        # --- TAB 2: CHART BUILDER ---
+        with tab_charts:
+            st.subheader("Create Custom Visualizations")
+
+            col_controls, col_display = st.columns([1, 2])
+
+            all_columns = df.columns.tolist()
+
+            with col_controls:
+                chart_type = st.selectbox(
+                    "Select Chart Type",
+                    ["Bar Chart", "Line Chart", "Scatter Plot", "Histogram", "Box Plot"],
+                )
+
+                x_axis = st.selectbox("X-Axis Column", options=all_columns)
+                
+                y_axis = st.selectbox(
+                    "Y-Axis Column",
+                    options=[None] + all_columns,
+                    index=1 if len(all_columns) > 1 else 0,
+                )
+
+                color_by = st.selectbox(
+                    "Color / Group By (Optional)", options=[None] + all_columns
+                )
+
+                chart_title = st.text_input("Chart Title", f"{chart_type} of {x_axis}")
+
+            with col_display:
+                fig = None
+                if chart_type == "Bar Chart":
+                    if y_axis:
+                        fig = px.bar(df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                    else:
+                        st.warning("Please select a Y-axis column for the Bar Chart.")
+
+                elif chart_type == "Line Chart":
+                    if y_axis:
+                        fig = px.line(df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                    else:
+                        st.warning("Please select a Y-axis column for the Line Chart.")
+
+                elif chart_type == "Scatter Plot":
+                    if y_axis:
+                        fig = px.scatter(df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                    else:
+                        st.warning("Please select a Y-axis column for the Scatter Plot.")
+
+                elif chart_type == "Histogram":
+                    fig = px.histogram(df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+
+                elif chart_type == "Box Plot":
+                    fig = px.box(df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+
+                if fig:
+                    st.plotly_chart(fig, width=1200)
+
+    except Exception as e:
+        st.error(f"Error loading file: {e}")
+else:
+    st.info("Use the sidebar on the left to upload a CSV or Excel dataset to get started.")
