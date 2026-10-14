@@ -4,6 +4,7 @@ from pathlib import Path
 import plotly.express as px
 import pandas as pd
 import streamlit as st
+from utils import load_data
 
 st.set_page_config(
     page_title="Dataset Explorer & Chart Builder",
@@ -22,11 +23,8 @@ uploaded_file = st.sidebar.file_uploader(
 
 if uploaded_file is not None:
     try:
-        # Load dataset based on extension
-        if uploaded_file.name.endswith(".csv"):
-            df = pd.read_csv(uploaded_file)
-        else:
-            df = pd.read_excel(uploaded_file)
+        # Load dataset using our modular helper function
+        df = load_data(uploaded_file)
 
         # --- SIDEBAR FILTERING ---
         st.sidebar.subheader("Filter Dataset")
@@ -137,7 +135,6 @@ if uploaded_file is not None:
             numeric_df = filtered_df.select_dtypes(include=["number"])
 
             if not numeric_df.empty and numeric_df.shape[1] > 1:
-                # Calculate correlation matrix
                 corr_matrix = numeric_df.corr()
                 
                 st.markdown("#### 🔍 Correlation Highlights")
@@ -147,7 +144,7 @@ if uploaded_file is not None:
                         col_a = corr_matrix.columns[i]
                         col_b = corr_matrix.columns[j]
                         val = corr_matrix.iloc[i, j]
-                        if abs(val) > 0.6:  # Strong correlation threshold
+                        if abs(val) > 0.6:
                             found_corr = True
                             direction = "positive" if val > 0 else "negative"
                             st.success(f"Strong **{direction} correlation** ({val:.2f}) found between **{col_a}** and **{col_b}**.")
