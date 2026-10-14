@@ -28,26 +28,44 @@ if uploaded_file is not None:
         else:
             df = pd.read_excel(uploaded_file)
 
-        # Tab navigation for EDA and Chart Builder
-        tab_eda, tab_charts = st.tabs(["📊 Exploratory Data Analysis", "📈 Chart Builder"])
+        # --- SIDEBAR FILTERING ---
+        st.sidebar.subheader("Filter Dataset")
+        enable_filtering = st.sidebar.checkbox("Enable Data Filtering")
+        
+        filtered_df = df.copy()
+        if enable_filtering:
+            filter_column = st.sidebar.selectbox("Select Column to Filter", options=df.columns.tolist())
+            unique_vals = df[filter_column].dropna().unique()
+            selected_vals = st.sidebar.multiselect("Select Values", options=unique_vals, default=list(unique_vals))
+            if selected_vals:
+                filtered_df = df[df[filter_column].isin(selected_vals)]
+            
+            st.sidebar.markdown(f"**Filtered Rows:** {filtered_df.shape[0]} of {df.shape[0]}")
+
+        # Tab navigation for EDA, Chart Builder, and Export
+        tab_eda, tab_charts, tab_export = st.tabs([
+            "📊 Exploratory Data Analysis", 
+            "📈 Chart Builder", 
+            "📥 Export Data"
+        ])
 
         # --- TAB 1: EDA ---
         with tab_eda:
-            st.subheader("Data Preview")
-            st.dataframe(df.head(), width=1200)
+            st.subheader("Data Preview (Filtered)" if enable_filtering else "Data Preview")
+            st.dataframe(filtered_df.head(), width=1200)
 
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Total Rows", df.shape[0])
+                st.metric("Total Rows", filtered_df.shape[0])
             with col2:
-                st.metric("Total Columns", df.shape[1])
+                st.metric("Total Columns", filtered_df.shape[1])
 
             with st.expander("Summary Statistics"):
-                st.dataframe(df.describe(include="all"), width=1200)
+                st.dataframe(filtered_df.describe(include="all"), width=1200)
 
             with st.expander("Missing Values Overview"):
-                missing = df.isnull().sum()
-                missing_pct = (missing / len(df)) * 100
+                missing = filtered_df.isnull().sum()
+                missing_pct = (missing / len(filtered_df)) * 100 if len(filtered_df) > 0 else 0
                 missing_df = pd.DataFrame(
                     {"Missing Values": missing, "Percentage (%)": missing_pct}
                 )
@@ -59,7 +77,7 @@ if uploaded_file is not None:
 
             col_controls, col_display = st.columns([1, 2])
 
-            all_columns = df.columns.tolist()
+            all_columns = filtered_df.columns.tolist()
 
             with col_controls:
                 chart_type = st.selectbox(
@@ -85,30 +103,44 @@ if uploaded_file is not None:
                 fig = None
                 if chart_type == "Bar Chart":
                     if y_axis:
-                        fig = px.bar(df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                        fig = px.bar(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
                     else:
                         st.warning("Please select a Y-axis column for the Bar Chart.")
 
                 elif chart_type == "Line Chart":
                     if y_axis:
-                        fig = px.line(df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                        fig = px.line(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
                     else:
                         st.warning("Please select a Y-axis column for the Line Chart.")
 
                 elif chart_type == "Scatter Plot":
                     if y_axis:
-                        fig = px.scatter(df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                        fig = px.scatter(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
                     else:
                         st.warning("Please select a Y-axis column for the Scatter Plot.")
 
                 elif chart_type == "Histogram":
-                    fig = px.histogram(df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                    fig = px.histogram(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
 
                 elif chart_type == "Box Plot":
-                    fig = px.box(df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                    fig = px.box(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
 
                 if fig:
                     st.plotly_chart(fig, width=1200)
+
+        # --- TAB 3: EXPORT DATA ---
+        with tab_export:
+            st.subheader("Download Filtered Dataset")
+            st.write("Export your active filtered dataset into a CSV file for reporting or further modeling.")
+
+            csv_data = filtered_df.to_csv(index=False).encode("utf-8")
+
+            st.download_button(
+                label="📥 Download Filtered CSV",
+                data=csv_data,
+                file_name="filtered_dataset.csv",
+                mime="text/csv",
+            )
 
     except Exception as e:
         st.error(f"Error loading file: {e}")
