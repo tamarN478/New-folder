@@ -1,10 +1,10 @@
-"""streamlit application for uploading a dataset, performing basic EDA, interactive charts, and automated insights."""
+"""streamlit application for uploading a dataset, exploratory data analysis, chart builder, ai insights, cleaning, and export."""
 
 from pathlib import Path
 import plotly.express as px
 import pandas as pd
 import streamlit as st
-from utils import load_data
+from utils import load_data, clean_data
 
 st.set_page_config(
     page_title="Dataset Explorer & Chart Builder",
@@ -23,8 +23,11 @@ uploaded_file = st.sidebar.file_uploader(
 
 if uploaded_file is not None:
     try:
-        # Load dataset using our modular helper function
-        df = load_data(uploaded_file)
+        # Load dataset using modular helper function
+        if "raw_df" not in st.session_state:
+            st.session_state.raw_df = load_data(uploaded_file)
+
+        df = st.session_state.raw_df
 
         # --- SIDEBAR FILTERING ---
         st.sidebar.subheader("Filter Dataset")
@@ -40,12 +43,13 @@ if uploaded_file is not None:
             
             st.sidebar.markdown(f"**Filtered Rows:** {filtered_df.shape[0]} of {df.shape[0]}")
 
-        # Tab navigation for EDA, Chart Builder, AI Insights, and Export
-        tab_eda, tab_charts, tab_insights, tab_export = st.tabs([
-            "📊 Exploratory Data Analysis", 
+        # Tab navigation including the new Data Cleaning tab
+        tab_eda, tab_cleaning, tab_charts, tab_insights, tab_export = st.tabs([
+            "📊 EDA", 
+            "🧹 Data Cleaning",
             "📈 Chart Builder", 
             "💡 AI Insights",
-            "📥 Export Data"
+            "📥 Export"
         ])
 
         # --- TAB 1: EDA ---
@@ -70,12 +74,44 @@ if uploaded_file is not None:
                 )
                 st.dataframe(missing_df, width=1200)
 
-        # --- TAB 2: CHART BUILDER ---
+        # --- TAB 2: DATA CLEANING ---
+        with tab_cleaning:
+            st.subheader("Interactive Data Cleaning Suite")
+            st.write("Modify and clean your dataset dynamically before building charts or exporting.")
+
+            col_action, col_preview = st.columns([1, 2])
+
+            with col_action:
+                cleaning_action = st.selectbox(
+                    "Select Cleaning Action",
+                    [
+                        "None",
+                        "Drop Duplicates",
+                        "Drop Rows with Missing Values",
+                        "Fill Missing Numeric Values (Mean)"
+                    ]
+                )
+
+                target_col = None
+                if cleaning_action == "Fill Missing Numeric Values (Mean)":
+                    numeric_cols = filtered_df.select_dtypes(include=["number"]).columns.tolist()
+                    target_col = st.selectbox("Select Numeric Column", options=numeric_cols)
+
+                if st.button("Apply Cleaning Action"):
+                    st.session_state.raw_df = clean_data(df, cleaning_action, target_col)
+                    st.success("Cleaning action applied successfully! Check the updated row counts.")
+                    st.rerun()
+
+            with col_preview:
+                st.write("Current Dataset Status:")
+                st.metric("Active Rows", filtered_df.shape[0])
+                st.metric("Active Missing Cells", int(filtered_df.isnull().sum().sum()))
+
+        # --- TAB 3: CHART BUILDER ---
         with tab_charts:
             st.subheader("Create Custom Visualizations")
 
             col_controls, col_display = st.columns([1, 2])
-
             all_columns = filtered_df.columns.tolist()
 
             with col_controls:
@@ -85,58 +121,41 @@ if uploaded_file is not None:
                 )
 
                 x_axis = st.selectbox("X-Axis Column", options=all_columns)
-                
                 y_axis = st.selectbox(
                     "Y-Axis Column",
                     options=[None] + all_columns,
                     index=1 if len(all_columns) > 1 else 0,
                 )
-
                 color_by = st.selectbox(
                     "Color / Group By (Optional)", options=[None] + all_columns
                 )
-
                 chart_title = st.text_input("Chart Title", f"{chart_type} of {x_axis}")
 
             with col_display:
                 fig = None
-                if chart_type == "Bar Chart":
-                    if y_axis:
-                        fig = px.bar(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
-                    else:
-                        st.warning("Please select a Y-axis column for the Bar Chart.")
-
-                elif chart_type == "Line Chart":
-                    if y_axis:
-                        fig = px.line(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
-                    else:
-                        st.warning("Please select a Y-axis column for the Line Chart.")
-
-                elif chart_type == "Scatter Plot":
-                    if y_axis:
-                        fig = px.scatter(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
-                    else:
-                        st.warning("Please select a Y-axis column for the Scatter Plot.")
-
+                if chart_type == "Bar Chart" and y_axis:
+                    fig = px.bar(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                elif chart_type == "Line Chart" and y_axis:
+                    fig = px.line(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                elif chart_type == "Scatter Plot" and y_axis:
+                    fig = px.scatter(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
                 elif chart_type == "Histogram":
                     fig = px.histogram(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
-
                 elif chart_type == "Box Plot":
                     fig = px.box(filtered_df, x=x_axis, y=y_axis, color=color_by, title=chart_title)
+                else:
+                    st.warning("Please select a valid Y-axis column.")
 
                 if fig:
                     st.plotly_chart(fig, width=1200)
 
-        # --- TAB 3: AI INSIGHTS ---
+        # --- TAB 4: AI INSIGHTS ---
         with tab_insights:
             st.subheader("Automated Dataset Insights")
-            st.write("Here are some automated observations generated from your active dataset:")
-
             numeric_df = filtered_df.select_dtypes(include=["number"])
 
             if not numeric_df.empty and numeric_df.shape[1] > 1:
                 corr_matrix = numeric_df.corr()
-                
                 st.markdown("#### 🔍 Correlation Highlights")
                 found_corr = False
                 for i in range(len(corr_matrix.columns)):
@@ -151,27 +170,17 @@ if uploaded_file is not None:
                 
                 if not found_corr:
                     st.info("No strong linear correlations (> 0.6 absolute value) detected among numeric columns.")
-
-                st.markdown("#### 📊 Quick Metric Highlights")
-                for col in numeric_df.columns:
-                    max_val = numeric_df[col].max()
-                    min_val = numeric_df[col].min()
-                    mean_val = numeric_df[col].mean()
-                    st.write(f"- **{col}**: Average is `{mean_val:.2f}`, ranging from `{min_val}` to `{max_val}`.")
             else:
-                st.warning("Not enough numeric columns available in the active dataset to generate automated statistical correlations.")
+                st.warning("Not enough numeric columns available to generate automated statistical correlations.")
 
-        # --- TAB 4: EXPORT DATA ---
+        # --- TAB 5: EXPORT DATA ---
         with tab_export:
             st.subheader("Download Filtered Dataset")
-            st.write("Export your active filtered dataset into a CSV file for reporting or further modeling.")
-
             csv_data = filtered_df.to_csv(index=False).encode("utf-8")
-
             st.download_button(
                 label="📥 Download Filtered CSV",
                 data=csv_data,
-                file_name="filtered_dataset.csv",
+                file_name="cleaned_dataset.csv",
                 mime="text/csv",
             )
 
