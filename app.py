@@ -1,4 +1,4 @@
-"""streamlit application for uploading a dataset, performing basic EDA, and creating interactive charts."""
+"""streamlit application for uploading a dataset, performing basic EDA, interactive charts, and automated insights."""
 
 from pathlib import Path
 import plotly.express as px
@@ -42,10 +42,11 @@ if uploaded_file is not None:
             
             st.sidebar.markdown(f"**Filtered Rows:** {filtered_df.shape[0]} of {df.shape[0]}")
 
-        # Tab navigation for EDA, Chart Builder, and Export
-        tab_eda, tab_charts, tab_export = st.tabs([
+        # Tab navigation for EDA, Chart Builder, AI Insights, and Export
+        tab_eda, tab_charts, tab_insights, tab_export = st.tabs([
             "📊 Exploratory Data Analysis", 
             "📈 Chart Builder", 
+            "💡 AI Insights",
             "📥 Export Data"
         ])
 
@@ -128,7 +129,42 @@ if uploaded_file is not None:
                 if fig:
                     st.plotly_chart(fig, width=1200)
 
-        # --- TAB 3: EXPORT DATA ---
+        # --- TAB 3: AI INSIGHTS ---
+        with tab_insights:
+            st.subheader("Automated Dataset Insights")
+            st.write("Here are some automated observations generated from your active dataset:")
+
+            numeric_df = filtered_df.select_dtypes(include=["number"])
+
+            if not numeric_df.empty and numeric_df.shape[1] > 1:
+                # Calculate correlation matrix
+                corr_matrix = numeric_df.corr()
+                
+                st.markdown("#### 🔍 Correlation Highlights")
+                found_corr = False
+                for i in range(len(corr_matrix.columns)):
+                    for j in range(i):
+                        col_a = corr_matrix.columns[i]
+                        col_b = corr_matrix.columns[j]
+                        val = corr_matrix.iloc[i, j]
+                        if abs(val) > 0.6:  # Strong correlation threshold
+                            found_corr = True
+                            direction = "positive" if val > 0 else "negative"
+                            st.success(f"Strong **{direction} correlation** ({val:.2f}) found between **{col_a}** and **{col_b}**.")
+                
+                if not found_corr:
+                    st.info("No strong linear correlations (> 0.6 absolute value) detected among numeric columns.")
+
+                st.markdown("#### 📊 Quick Metric Highlights")
+                for col in numeric_df.columns:
+                    max_val = numeric_df[col].max()
+                    min_val = numeric_df[col].min()
+                    mean_val = numeric_df[col].mean()
+                    st.write(f"- **{col}**: Average is `{mean_val:.2f}`, ranging from `{min_val}` to `{max_val}`.")
+            else:
+                st.warning("Not enough numeric columns available in the active dataset to generate automated statistical correlations.")
+
+        # --- TAB 4: EXPORT DATA ---
         with tab_export:
             st.subheader("Download Filtered Dataset")
             st.write("Export your active filtered dataset into a CSV file for reporting or further modeling.")
