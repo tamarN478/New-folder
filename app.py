@@ -13,6 +13,7 @@ st.set_page_config(
 pages = {
     "": [
         st.Page("pages/home.py", title="Home", icon=":material/home:", default=True),
+        st.Page("pages/combine_data.py", title="Combine Data", icon=":material/join_inner:"),
     ],
     "Analyze": [
         st.Page("pages/eda_cleaning.py", title="Explore & Clean", icon=":material/query_stats:"),
