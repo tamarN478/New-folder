@@ -44,8 +44,21 @@ def _students_sample():
     )
 
 
+def _faculties_sample():
+    """small lookup table that joins with the Students sample on 'faculty'."""
+    return pd.DataFrame(
+        {
+            "faculty": ["Computer Science", "Math", "Biology", "Physics", "Chemistry"],
+            "building": ["North Hall", "Main Building", "Life Sciences", "Main Building", "Lab Block"],
+            "founded": [1985, 1918, 1930, 1918, 1952],
+            "students_enrolled": [1200, 640, 910, 480, 520],
+        }
+    )
+
+
 SAMPLE_DATASETS = {
     "Students": _students_sample,
+    "Faculties": _faculties_sample,
     "Restaurant tips": px.data.tips,
     "Iris flowers": px.data.iris,
     "Gapminder (countries over time)": px.data.gapminder,
