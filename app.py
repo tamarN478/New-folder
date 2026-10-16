@@ -20,6 +20,7 @@ pages = {
         st.Page("pages/pivot_tables.py", title="Group & Pivot", icon=":material/pivot_table_chart:"),
         st.Page("pages/chart_builder.py", title="Chart Builder", icon=":material/bar_chart:"),
         st.Page("pages/dashboard.py", title="Dashboard", icon=":material/dashboard:"),
+        st.Page("pages/predictions.py", title="Predictions", icon=":material/trending_up:"),
         st.Page("pages/ai_insights.py", title="AI Insights", icon=":material/auto_awesome:"),
     ],
 }
