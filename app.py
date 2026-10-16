@@ -2,7 +2,7 @@
 
 import pandas as pd
 import streamlit as st
-from utils import load_data
+from utils import load_data, set_new_dataset
 
 
 st.set_page_config(
@@ -183,8 +183,18 @@ def manual_data_entry() -> None:
         st.session_state.setdefault("raw_df", pd.DataFrame())
         return
 
-    st.session_state.raw_df = _to_analysis_df(manual_df)
-    st.session_state.uploaded_file_name = None
+    # Only replace the active dataset when the table actually changed, so
+    # cleaning done on the EDA page survives a visit back to this page.
+    analysis_df = _to_analysis_df(manual_df)
+    previous = st.session_state.get("manual_pushed_df")
+    if (
+        st.session_state.get("dataset_source") != "manual"
+        or previous is None
+        or not analysis_df.equals(previous)
+    ):
+        set_new_dataset(analysis_df, "manual")
+        st.session_state.manual_pushed_df = analysis_df
+
 
 def home_page() -> None:
     """Render the home page and dataset uploader."""
@@ -210,10 +220,10 @@ def home_page() -> None:
             st.info("Use the file uploader in the sidebar to get started.")
             return
 
+        source = f"file:{uploaded_file.name}:{uploaded_file.size}"
         try:
-            if st.session_state.get("uploaded_file_name") != uploaded_file.name:
-                st.session_state.raw_df = load_data(uploaded_file)
-                st.session_state.uploaded_file_name = uploaded_file.name
+            if st.session_state.get("dataset_source") != source:
+                set_new_dataset(load_data(uploaded_file), source)
             st.sidebar.success("Dataset loaded successfully!")
         except Exception as error:
             st.sidebar.error(f"Error loading file: {error}")
@@ -229,6 +239,11 @@ def home_page() -> None:
 
     st.subheader("Dataset Preview")
     st.dataframe(st.session_state.raw_df.head(), width="stretch")
+    if st.session_state.get("history"):
+        st.caption(
+            f"ℹ️ This data has {len(st.session_state.history)} cleaning step(s) applied "
+            "on the EDA & Cleaning page."
+        )
 
 
 pages = {
