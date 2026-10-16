@@ -2,6 +2,7 @@
 
 import pandas as pd
 import streamlit as st
+from charts import auto_histogram, auto_top_values, correlation_heatmap
 from utils import (
     CLEANING_ACTIONS,
     apply_change,
@@ -10,6 +11,8 @@ from utils import (
     reset_to_original,
     undo_last_change,
 )
+
+MAX_AUTO_CHARTS = 12
 
 st.title("📊 Exploratory Data Analysis & Data Cleaning")
 
@@ -44,7 +47,9 @@ else:
                 filtered_df = df[column_values.isin(selected_vals)]
         st.sidebar.markdown(f"**Filtered Rows:** {filtered_df.shape[0]} of {df.shape[0]}")
 
-    tab_eda, tab_cleaning = st.tabs(["📊 Data Overview", "🧹 Data Cleaning Suite"])
+    tab_eda, tab_auto, tab_cleaning = st.tabs(
+        ["📊 Data Overview", "⚡ Automatic Charts", "🧹 Data Cleaning Suite"]
+    )
 
     with tab_eda:
         st.subheader("Data Preview")
@@ -70,6 +75,22 @@ else:
         if enable_filtering:
             st.caption("Downloads include only the rows that match your filter.")
         download_buttons(filtered_df, file_stem="cleaned_data", key="eda_download")
+
+    with tab_auto:
+        st.caption("One chart per column, so you can spot patterns and odd values at a glance.")
+        numeric_columns = filtered_df.select_dtypes(include="number").columns.tolist()
+        other_columns = [c for c in filtered_df.columns if c not in numeric_columns]
+
+        if len(numeric_columns) >= 2:
+            st.plotly_chart(correlation_heatmap(filtered_df), width="stretch")
+
+        charts = [("hist", c) for c in numeric_columns] + [("top", c) for c in other_columns]
+        if len(charts) > MAX_AUTO_CHARTS:
+            st.caption(f"Showing the first {MAX_AUTO_CHARTS} of {len(charts)} columns.")
+        grid = st.columns(2)
+        for position, (kind, column) in enumerate(charts[:MAX_AUTO_CHARTS]):
+            fig = auto_histogram(filtered_df, column) if kind == "hist" else auto_top_values(filtered_df, column)
+            grid[position % 2].plotly_chart(fig, width="stretch")
 
     with tab_cleaning:
         st.subheader("Interactive Data Cleaning")
