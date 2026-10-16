@@ -22,6 +22,7 @@ pages = {
         st.Page("pages/dashboard.py", title="Dashboard", icon=":material/dashboard:"),
         st.Page("pages/predictions.py", title="Predictions", icon=":material/trending_up:"),
         st.Page("pages/ai_insights.py", title="AI Insights", icon=":material/auto_awesome:"),
+        st.Page("pages/pdf_report.py", title="PDF Report", icon=":material/picture_as_pdf:"),
     ],
 }
 

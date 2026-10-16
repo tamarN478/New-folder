@@ -3,3 +3,5 @@ pandas>=3.0
 plotly>=7.1
 openpyxl>=3.1
 anthropic>=1.15
+fpdf2>=2.8
+matplotlib>=3.10
