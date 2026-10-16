@@ -3,6 +3,7 @@
 import pandas as pd
 import streamlit as st
 from charts import auto_histogram, auto_top_values, correlation_heatmap
+from quality import PENALTIES, quality_report
 from ui import page_header, require_dataset
 from utils import (
     CLEANING_ACTIONS,
@@ -129,6 +130,41 @@ def history_panel():
             st.caption("Cleaning steps you apply will be listed here, and you can undo them.")
 
 
+def quality_tab(df):
+    score, summary, issues = quality_report(df)
+    verdict = "Excellent" if score >= 90 else "Good" if score >= 75 else "Needs work" if score >= 50 else "Poor"
+
+    top = st.container(horizontal=True)
+    top.metric("Quality score", f"{score}/100", border=True, help="Average of the column scores below, "
+               "minus points for problems with the whole dataset such as duplicate rows.")
+    top.metric("Verdict", verdict, border=True)
+    top.metric("Problems found", len(issues), border=True)
+
+    st.markdown("##### Column scores")
+    st.dataframe(
+        summary, hide_index=True, width="stretch",
+        column_config={"Score": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%d")},
+    )
+
+    st.markdown("##### Suggested fixes")
+    if not issues:
+        st.caption("No problems found. Your data looks clean.")
+        return
+    st.caption("Each fix is recorded in the History panel on the Clean data tab, so you can undo it.")
+    severity_badge = {"high": ("High", "red"), "medium": ("Medium", "orange"), "low": ("Low", "gray")}
+    for position, issue in enumerate(sorted(issues, key=lambda i: list(PENALTIES).index(i.severity))):
+        with st.container(border=True, horizontal=True, vertical_alignment="center"):
+            label, color = severity_badge[issue.severity]
+            st.badge(label, color=color)
+            where = f"**{issue.column}**: " if issue.column else "**Whole dataset**: "
+            st.markdown(where + issue.problem, width="stretch")
+            if st.button(issue.fix_label, key=f"fix_{position}", icon=":material/auto_fix_high:"):
+                cleaned = clean_data(df, issue.action, issue.columns, issue.option)
+                apply_change(cleaned, f"{issue.fix_label} ({issue.column or 'all rows'})")
+                st.session_state.cleaning_message = f"{issue.fix_label}: done"
+                st.rerun()
+
+
 def cleaning_tab(df):
     if "cleaning_message" in st.session_state:
         st.toast(st.session_state.pop("cleaning_message"), icon=":material/check_circle:")
@@ -223,13 +259,16 @@ page_header("Explore & Clean", "Get to know your data, spot problems, and fix th
 df = require_dataset()
 filtered_df, is_filtered = filter_rows(df)
 
-tab_overview, tab_auto, tab_cleaning = st.tabs([
+tab_overview, tab_quality, tab_auto, tab_cleaning = st.tabs([
     ":material/table_chart: Overview",
+    ":material/health_and_safety: Data quality",
     ":material/insights: Automatic charts",
     ":material/cleaning_services: Clean data",
 ])
 with tab_overview:
     overview_tab(filtered_df, is_filtered)
+with tab_quality:
+    quality_tab(df)
 with tab_auto:
     auto_charts_tab(filtered_df)
 with tab_cleaning:
