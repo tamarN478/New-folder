@@ -32,6 +32,9 @@ NEXT_STEPS = [
     (":material/auto_awesome:", "Ask AI",
      "Ask questions in plain language or get an instant summary of your dataset.",
      "pages/ai_insights.py"),
+    (":material/picture_as_pdf:", "PDF report",
+     "Download a tidy PDF with statistics, data quality, charts and AI insights.",
+     "pages/pdf_report.py"),
 ]
 
 
