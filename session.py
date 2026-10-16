@@ -99,7 +99,9 @@ def restore(session):
     state.pop("data_input_method", None)
     state.pop("dashboard_title_input", None)
     state.manual_editor_version = state.get("manual_editor_version", 0) + 1
-    state.ai_messages = []
+    state.ai_transcript = []
+    state.ai_display = []
+    state.pop("ai_data_fingerprint", None)
 
 
 def session_controls():
