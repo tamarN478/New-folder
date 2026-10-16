@@ -16,7 +16,9 @@ FORMAT_VERSION = 1
 # Tables kept in st.session_state that make up a session.
 SESSION_TABLES = ["raw_df", "original_df", "manual_grid", "manual_grid_draft", "manual_pushed_df"]
 # Plain values (anything JSON can store) kept in st.session_state.
-SESSION_VALUES = ["dataset_source", "input_method_choice", "manual_hidden", "dashboard_charts"]
+SESSION_VALUES = [
+    "dataset_source", "input_method_choice", "manual_hidden", "dashboard_charts", "dashboard_title",
+]
 
 
 def _parquet_bytes(df):
@@ -95,6 +97,7 @@ def restore(session):
     state.history = session["history"]
     # Let widgets pick up the restored values instead of keeping their old ones.
     state.pop("data_input_method", None)
+    state.pop("dashboard_title_input", None)
     state.manual_editor_version = state.get("manual_editor_version", 0) + 1
     state.ai_messages = []
 
