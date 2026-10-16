@@ -14,6 +14,9 @@ NEXT_STEPS = [
     (":material/query_stats:", "Explore & clean",
      "Summary statistics, automatic charts, filters, and one-click cleaning tools with undo.",
      "pages/eda_cleaning.py"),
+    (":material/pivot_table_chart:", "Group & pivot",
+     "Summarize by groups, like Excel pivot tables: averages, sums and counts per category.",
+     "pages/pivot_tables.py"),
     (":material/bar_chart:", "Build charts",
      "Bar, line, scatter, pie, box plots and heatmaps, with grouping by average or sum.",
      "pages/chart_builder.py"),
@@ -73,11 +76,14 @@ def dataset_overview(df):
 
 def next_steps():
     st.subheader("What you can do")
-    for column, (icon, title, text, page) in zip(st.columns(len(NEXT_STEPS)), NEXT_STEPS):
-        with column.container(border=True, height="stretch"):
-            st.markdown(f"#### {icon} {title}")
-            st.caption(text)
-            st.page_link(page, label="Open", icon=":material/arrow_forward:")
+    per_row = 3
+    for start in range(0, len(NEXT_STEPS), per_row):
+        columns = st.columns(per_row)
+        for column, (icon, title, text, page) in zip(columns, NEXT_STEPS[start:start + per_row]):
+            with column.container(border=True, height="stretch"):
+                st.markdown(f"#### {icon} {title}")
+                st.caption(text)
+                st.page_link(page, label="Open", icon=":material/arrow_forward:")
 
 
 page_header(

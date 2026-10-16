@@ -15,6 +15,7 @@ pages = {
     ],
     "Analyze": [
         st.Page("pages/eda_cleaning.py", title="Explore & Clean", icon=":material/query_stats:"),
+        st.Page("pages/pivot_tables.py", title="Group & Pivot", icon=":material/pivot_table_chart:"),
         st.Page("pages/chart_builder.py", title="Chart Builder", icon=":material/bar_chart:"),
         st.Page("pages/ai_insights.py", title="AI Insights", icon=":material/auto_awesome:"),
     ],
