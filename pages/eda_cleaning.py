@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 from charts import auto_histogram, auto_top_values, correlation_heatmap
 from quality import PENALTIES, quality_report
+from transforms import DATE_PARTS, add_date_parts, add_formula_column, add_ranges, parse_boundaries
 from ui import page_header, require_dataset
 from utils import (
     CLEANING_ACTIONS,
@@ -165,6 +166,79 @@ def quality_tab(df):
                 st.rerun()
 
 
+def new_columns_tab(df):
+    if "column_message" in st.session_state:
+        st.toast(st.session_state.pop("column_message"), icon=":material/check_circle:")
+
+    numeric_cols = df.select_dtypes("number").columns.tolist()
+    kind = st.segmented_control(
+        "What kind of column?",
+        ["Formula", "Date parts", "Number ranges"],
+        default="Formula",
+        required=True,
+        key="new_column_kind",
+    )
+
+    with st.container(border=True):
+        new_df, description = None, None
+        try:
+            if kind == "Formula":
+                st.caption(
+                    "Use column names with + − × ÷ (`+ - * /`), powers (`**`) and brackets. "
+                    "Examples: `price * quantity`, `gpa / 4 * 100`, `tip / total_bill`."
+                )
+                st.markdown("Columns: " + ", ".join(f"`{c}`" for c in df.columns))
+                name = st.text_input("New column name", key="formula_name").strip()
+                expression = st.text_input("Formula", key="formula_expression")
+                if expression:
+                    if not name:
+                        st.caption("Give the new column a name to add it.")
+                    else:
+                        new_df = add_formula_column(df, name, expression)
+                        description = f"Add column '{name}' = {expression}"
+            elif kind == "Date parts":
+                column = st.selectbox("Date column", df.columns, key="date_column")
+                parts = st.pills("Parts to add", list(DATE_PARTS), selection_mode="multi",
+                                 default=["Year", "Month"], key="date_parts")
+                if parts:
+                    new_df = add_date_parts(df, column, parts)
+                    description = f"Split '{column}' into {', '.join(parts).lower()}"
+            else:
+                if not numeric_cols:
+                    st.caption("This needs a numeric column.")
+                    return
+                column = st.selectbox("Numeric column", numeric_cols, key="range_column")
+                name = st.text_input("New column name", value=f"{column} range", key="range_name").strip()
+                mode = st.radio("Ranges", ["Equal-width ranges", "My own boundaries"], horizontal=True,
+                                key="range_mode")
+                if mode == "Equal-width ranges":
+                    bins = st.slider("How many ranges", 2, 10, 4, key="range_count")
+                else:
+                    boundaries = st.text_input("Boundaries", placeholder="e.g. 0, 2, 3, 3.5, 4",
+                                               key="range_bounds")
+                    bins = parse_boundaries(boundaries) if boundaries else None
+                if bins and name:
+                    new_df = add_ranges(df, column, name, bins)
+                    description = f"Group '{column}' into ranges as '{name}'"
+        except Exception as error:
+            st.error(f"{error}", icon=":material/error:")
+            new_df = None
+
+        if new_df is not None:
+            added = [c for c in new_df.columns if c not in df.columns or not new_df[c].equals(df[c])]
+            st.markdown("##### Preview")
+            st.dataframe(new_df.head(8), width="stretch",
+                         column_config={c: st.column_config.Column(pinned=True) for c in added})
+            replaced = [c for c in added if c in df.columns]
+            if replaced:
+                st.warning(f"'{replaced[0]}' already exists and will be replaced.")
+            if st.button("Add column" + ("s" if len(added) > 1 else ""), type="primary",
+                         icon=":material/add:"):
+                apply_change(new_df, description)
+                st.session_state.column_message = description
+                st.rerun()
+
+
 def cleaning_tab(df):
     if "cleaning_message" in st.session_state:
         st.toast(st.session_state.pop("cleaning_message"), icon=":material/check_circle:")
@@ -259,11 +333,12 @@ page_header("Explore & Clean", "Get to know your data, spot problems, and fix th
 df = require_dataset()
 filtered_df, is_filtered = filter_rows(df)
 
-tab_overview, tab_quality, tab_auto, tab_cleaning = st.tabs([
+tab_overview, tab_quality, tab_auto, tab_cleaning, tab_columns = st.tabs([
     ":material/table_chart: Overview",
     ":material/health_and_safety: Data quality",
     ":material/insights: Automatic charts",
     ":material/cleaning_services: Clean data",
+    ":material/function: New columns",
 ])
 with tab_overview:
     overview_tab(filtered_df, is_filtered)
@@ -273,3 +348,5 @@ with tab_auto:
     auto_charts_tab(filtered_df)
 with tab_cleaning:
     cleaning_tab(df)
+with tab_columns:
+    new_columns_tab(df)
