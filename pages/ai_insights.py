@@ -1,40 +1,28 @@
-"""ai dataset insights page: quick statistics plus a chat that answers questions about the data."""
+"""ai dataset insights page: quick statistics plus an AI analyst that can chart, clean and calculate."""
 
 import os
 
 import anthropic
-import pandas as pd
 import streamlit as st
+from ai_agent import dataset_fingerprint, describe_dataset, run_turn
 from ui import page_header, require_dataset
 
-MODEL = "claude-opus-5-5"
-# Above this size only the first rows are sent, to keep requests fast and affordable.
-MAX_DATA_CHARS = 300_000
-# label shown on the button -> (icon, question sent to the AI); None means the summary prompt.
-SUGGESTED_QUESTIONS = {
-    "Summarize this dataset": (":material/summarize:", None),
-    "Find interesting patterns": (":material/insights:", "What are the most interesting patterns?"),
-    "Check data quality": (":material/rule:", "Are there any data quality problems?"),
-    "Suggest charts": (":material/bar_chart:", "Which charts would best show this data?"),
+# label shown on the button -> (icon, request sent to the AI)
+SUGGESTIONS = {
+    "Summarize this dataset": (
+        ":material/summarize:",
+        "Give me a short overview of this dataset: what it seems to be about, what each column "
+        "contains, key statistics, notable patterns or outliers, and any data quality issues. "
+        "Finish with 3 questions worth exploring.",
+    ),
+    "Chart the key pattern": (":material/bar_chart:",
+                              "Find the most interesting pattern in this data and show it in a chart."),
+    "Fix data quality problems": (":material/auto_fix_high:",
+                                  "Check the data for quality problems and fix the ones that are safe to fix."),
+    "Which group does best?": (":material/leaderboard:",
+                               "Which group or category stands out the most on the main numeric column?"),
 }
 AVATARS = {"user": ":material/person:", "assistant": ":material/auto_awesome:"}
-SUMMARY_PROMPT = (
-    "Give me a short overview of this dataset: what it seems to be about, what each "
-    "column contains, key statistics, notable patterns or outliers, and any data quality "
-    "issues (missing values, odd values, duplicates). Finish with 3 questions worth exploring."
-)
-SYSTEM_PROMPT = """You are a friendly data analyst inside a data exploration app. The user \
-has loaded a dataset, which is included below. Answer their questions about it.
-
-- Base every answer on the data provided. If a question can't be answered from it, say so.
-- When you compute something (averages, counts, rankings), work carefully from the actual \
-rows and show the key numbers. If only a sample of the rows is included, say that your \
-answer is based on the sample.
-- The user may be new to data analysis: explain in plain language and keep answers short.
-- Use Markdown: short paragraphs, bullet points, and small tables where they help.
-- The app also has an "EDA & Cleaning" page (filters, cleaning tools, automatic charts) and a \
-"Chart Builder" page (bar, line, scatter, histogram, box, pie, correlation heatmap with \
-sum/average grouping). Point the user to them when relevant."""
 
 
 def get_api_key():
@@ -52,57 +40,6 @@ def get_api_key():
         key="anthropic_api_key",
         help="Kept only for this browser session. Get one at console.anthropic.com.",
     )
-
-
-def describe_dataset(df):
-    """build the text description of the dataset that is sent to the model."""
-    columns = "\n".join(
-        f"- {column} ({dtype}, {df[column].isnull().sum()} missing, "
-        f"{df[column].nunique()} unique values)"
-        for column, dtype in df.dtypes.items()
-    )
-    stats = df.describe(include="all").to_string()
-    csv_text = df.to_csv(index=False)
-    sampled = len(csv_text) > MAX_DATA_CHARS
-    if sampled:
-        rows_that_fit = max(10, int(len(df) * MAX_DATA_CHARS / len(csv_text)))
-        csv_text = df.head(rows_that_fit).to_csv(index=False)
-        rows_note = f"Only the first {rows_that_fit} of {len(df)} rows are included below."
-    else:
-        rows_note = f"All {len(df)} rows are included below."
-
-    description = (
-        f"Dataset: {len(df)} rows x {len(df.columns)} columns.\n\n"
-        f"Columns:\n{columns}\n\n"
-        f"Summary statistics (computed on ALL rows):\n{stats}\n\n"
-        f"{rows_note}\n<data format=\"csv\">\n{csv_text}</data>"
-    )
-    return description, sampled
-
-
-def stream_answer(client, data_description, messages):
-    """yield the model's answer piece by piece as it is written."""
-    with client.beta.messages.stream(
-        model=MODEL,
-        max_tokens=16000,
-        system=[
-            {"type": "text", "text": SYSTEM_PROMPT},
-            # The dataset is identical across chat turns, so cache it to make follow-ups cheaper.
-            {"type": "text", "text": data_description, "cache_control": {"type": "ephemeral"}},
-        ],
-        messages=messages,
-        output_config={"effort": "medium"},
-        # If a safety check declines the request, retry it on Anthropic's recommended model.
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-    ) as stream:
-        yield from stream.text_stream
-        final = stream.get_final_message()
-
-    if final.stop_reason == "refusal":
-        yield "\n\n_The AI declined to answer this question. Try rephrasing it._"
-    elif final.stop_reason == "max_tokens":
-        yield "\n\n_(The answer was cut off because it got too long. Ask for a shorter version.)_"
 
 
 def show_statistical_insights(df):
@@ -133,7 +70,65 @@ def show_statistical_insights(df):
     )
 
 
-page_header("AI Insights", "Ask questions about your data in plain language.")
+def show_part(part):
+    if part["type"] == "text":
+        st.markdown(part["text"])
+    elif part["type"] == "chart":
+        st.plotly_chart(part["figure"], width="stretch")
+    elif part["type"] == "action":
+        st.markdown(f":blue-badge[:material/auto_fix_high: Changed your data] {part['text']}")
+
+
+def ask(client, question, shown_as, df):
+    """send one question (with a data update if the data changed) and show the answer."""
+    transcript = st.session_state.ai_transcript
+    content = []
+    fingerprint = dataset_fingerprint(df)
+    if st.session_state.get("ai_data_fingerprint") != fingerprint:
+        content.append({"type": "text", "text": describe_dataset(df)[0]})
+    content.append({"type": "text", "text": question})
+
+    with st.chat_message("user", avatar=AVATARS["user"]):
+        st.markdown(shown_as)
+
+    turn_start = len(transcript)
+    transcript.append({"role": "user", "content": content})
+    with st.chat_message("assistant", avatar=AVATARS["assistant"]):
+        def show_text():
+            box = st.empty()
+            return lambda text: box.markdown(text + " ▌")
+
+        def show_item(item):
+            show_part(item)
+
+        try:
+            with st.spinner("Thinking…", show_time=True):
+                parts = run_turn(client, transcript, show_text, show_item)
+        except anthropic.AuthenticationError:
+            error = "That API key was rejected. Check it in the sidebar and try again."
+        except anthropic.PermissionDeniedError:
+            error = "This API key doesn't have access to the model. Check your Anthropic account."
+        except anthropic.RateLimitError:
+            error = "Too many requests right now. Wait a minute and try again."
+        except anthropic.BadRequestError as bad:
+            error = f"The request was rejected: {bad.message}"
+        except anthropic.APIStatusError as failed:
+            error = f"The AI service had a problem ({failed.status_code}). Try again shortly."
+        except anthropic.APIConnectionError:
+            error = "Couldn't reach the AI service. Check your internet connection."
+        else:
+            # Remember the data the AI was shown. If it changed the data itself, the next
+            # question sends the new version.
+            st.session_state.ai_data_fingerprint = fingerprint
+            st.session_state.ai_display.append({"role": "user", "parts": [{"type": "text", "text": shown_as}]})
+            st.session_state.ai_display.append({"role": "assistant", "parts": parts})
+            st.rerun()  # redraw the page (and sidebar) with any data the AI changed
+        # The turn didn't finish: drop it so the conversation stays valid for the next question.
+        del transcript[turn_start:]
+        st.error(error)
+
+
+page_header("AI Insights", "Ask questions in plain language. The AI can also make charts and clean your data.")
 df = require_dataset()
 
 with st.expander("Quick statistical insights (no AI needed)", icon=":material/monitoring:"):
@@ -141,9 +136,12 @@ with st.expander("Quick statistical insights (no AI needed)", icon=":material/mo
 
 # A different dataset makes the old conversation meaningless, so start over.
 if st.session_state.get("ai_chat_source") != st.session_state.get("dataset_source"):
-    st.session_state.ai_messages = []
+    st.session_state.ai_transcript = []
+    st.session_state.ai_display = []
+    st.session_state.pop("ai_data_fingerprint", None)
     st.session_state.ai_chat_source = st.session_state.get("dataset_source")
-messages = st.session_state.setdefault("ai_messages", [])
+st.session_state.setdefault("ai_transcript", [])
+display = st.session_state.setdefault("ai_display", [])
 
 api_key = get_api_key()
 if not api_key:
@@ -156,53 +154,32 @@ if not api_key:
     )
     st.stop()
 
-data_description, sampled = describe_dataset(df)
-caption = "Your dataset is sent to Anthropic's Claude AI to answer questions. Answers can contain mistakes, so double-check important numbers."
-if sampled:
-    caption += " Your data is large, so the AI sees summary statistics for all rows but only the first part of the rows themselves."
+caption = ("Your dataset is sent to Anthropic's Claude AI. The AI can make charts and change your data when "
+           "you ask it to; every change can be undone on the Explore & Clean page. Double-check important numbers.")
+if describe_dataset(df)[1]:
+    caption += " Your data is large, so the AI sees all summary statistics but only the first part of the rows."
 st.caption(caption)
 
-for message in messages:
+for message in display:
     with st.chat_message(message["role"], avatar=AVATARS[message["role"]]):
-        st.markdown(message.get("display", message["content"]))
+        for part in message["parts"]:
+            show_part(part)
 
 question = shown_as = None
-if not messages:
+if not display:
     suggestions = st.container(horizontal=True, gap="small")
-    for label, (icon, prompt) in SUGGESTED_QUESTIONS.items():
+    for label, (icon, prompt) in SUGGESTIONS.items():
         if suggestions.button(label, icon=icon):
-            question, shown_as = prompt or SUMMARY_PROMPT, label
+            question, shown_as = prompt, label
 elif st.button("Clear chat", icon=":material/delete_sweep:"):
-    st.session_state.ai_messages = []
+    st.session_state.ai_transcript = []
+    st.session_state.ai_display = []
+    st.session_state.pop("ai_data_fingerprint", None)
     st.rerun()
 
-typed = st.chat_input("Ask a question about your data, e.g. 'Which group has the highest average?'")
+typed = st.chat_input("Ask a question, or ask for a chart or a fix, e.g. 'chart average tip by day'")
 if typed:
-    question, shown_as = typed, None
+    question, shown_as = typed, typed
 
 if question:
-    with st.chat_message("user", avatar=AVATARS["user"]):
-        st.markdown(shown_as or question)
-    # Only role and content go to the API; "display" is just what this page shows.
-    request_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
-    request_messages.append({"role": "user", "content": question})
-
-    with st.chat_message("assistant", avatar=AVATARS["assistant"]):
-        client = anthropic.Anthropic(api_key=api_key)
-        try:
-            answer = st.write_stream(stream_answer(client, data_description, request_messages))
-        except anthropic.AuthenticationError:
-            st.error("That API key was rejected. Check it in the sidebar and try again.")
-        except anthropic.PermissionDeniedError:
-            st.error("This API key doesn't have access to the model. Check your Anthropic account.")
-        except anthropic.RateLimitError:
-            st.error("Too many requests right now. Wait a minute and try again.")
-        except anthropic.BadRequestError as error:
-            st.error(f"The request was rejected: {error.message}")
-        except anthropic.APIStatusError as error:
-            st.error(f"The AI service had a problem ({error.status_code}). Try again shortly.")
-        except anthropic.APIConnectionError:
-            st.error("Couldn't reach the AI service. Check your internet connection.")
-        else:
-            messages.append({"role": "user", "content": question, "display": shown_as or question})
-            messages.append({"role": "assistant", "content": answer})
+    ask(anthropic.Anthropic(api_key=api_key), question, shown_as, df)

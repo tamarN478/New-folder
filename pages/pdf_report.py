@@ -9,11 +9,17 @@ df = require_dataset()
 
 pinned = st.session_state.get("dashboard_charts", [])
 history = [description for description, _ in st.session_state.get("history", [])]
-chat = st.session_state.get("ai_messages", [])
+chat = st.session_state.get("ai_display", [])
+
+
+def _text(message):
+    return "\n\n".join(part["text"] for part in message["parts"] if part["type"] == "text")
+
+
 ai_answers = [
-    (chat[i].get("display", chat[i]["content"]), chat[i + 1]["content"])
+    (_text(chat[i]), _text(chat[i + 1]))
     for i in range(0, len(chat) - 1, 2)
-    if chat[i]["role"] == "user" and chat[i + 1]["role"] == "assistant"
+    if chat[i]["role"] == "user" and chat[i + 1]["role"] == "assistant" and _text(chat[i + 1])
 ]
 
 settings_col, info_col = st.columns([2, 1])
