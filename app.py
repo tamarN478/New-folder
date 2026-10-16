@@ -1,6 +1,7 @@
 """Main entrypoint for the multi-page Streamlit data app."""
 
 import streamlit as st
+from session import session_controls
 from ui import sidebar_dataset_status
 
 st.set_page_config(
@@ -26,4 +27,6 @@ navigation = st.navigation(pages)
 # Pages rerun the app whenever they load or change the dataset, so this card is always current.
 with st.sidebar:
     sidebar_dataset_status()
+    st.divider()
+    session_controls()
 navigation.run()
