@@ -39,6 +39,8 @@ def style_figure(fig):
         legend_title_text="",
         margin=dict(t=60, l=10, r=10, b=10),
         hoverlabel=dict(namelength=-1),
+        font=dict(family="Inter, sans-serif"),
+        title_font=dict(size=16),
     )
     fig.update_traces(selector=dict(type="bar"), marker_line_width=0)
     fig.update_traces(selector=dict(type="scatter", mode="lines"), line_width=2)

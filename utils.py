@@ -45,10 +45,10 @@ def _students_sample():
 
 
 SAMPLE_DATASETS = {
-    "🎓 Students (small, simple)": _students_sample,
-    "🍽 Restaurant Tips": px.data.tips,
-    "🌸 Iris Flowers": px.data.iris,
-    "🌍 Gapminder (countries over time)": px.data.gapminder,
+    "Students": _students_sample,
+    "Restaurant tips": px.data.tips,
+    "Iris flowers": px.data.iris,
+    "Gapminder (countries over time)": px.data.gapminder,
 }
 
 
@@ -108,19 +108,21 @@ def download_buttons(df, file_stem="dataset", key="download"):
     """render side-by-side csv and excel download buttons for df."""
     csv_col, excel_col = st.columns(2)
     csv_col.download_button(
-        "⬇ Download CSV",
+        "Download CSV",
         to_csv_bytes(df),
         file_name=f"{file_stem}.csv",
         mime="text/csv",
         key=f"{key}_csv",
+        icon=":material/download:",
         width="stretch",
     )
     excel_col.download_button(
-        "⬇ Download Excel",
+        "Download Excel",
         to_excel_bytes(df),
         file_name=f"{file_stem}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key=f"{key}_excel",
+        icon=":material/download:",
         width="stretch",
     )
 

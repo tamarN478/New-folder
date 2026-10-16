@@ -5,16 +5,19 @@ import os
 import anthropic
 import pandas as pd
 import streamlit as st
+from ui import page_header, require_dataset
 
 MODEL = "claude-opus-5-5"
 # Above this size only the first rows are sent, to keep requests fast and affordable.
 MAX_DATA_CHARS = 300_000
-SUGGESTED_QUESTIONS = [
-    "✨ Summarize this dataset",
-    "What are the most interesting patterns?",
-    "Are there any data quality problems?",
-    "Which charts would best show this data?",
-]
+# label shown on the button -> (icon, question sent to the AI); None means the summary prompt.
+SUGGESTED_QUESTIONS = {
+    "Summarize this dataset": (":material/summarize:", None),
+    "Find interesting patterns": (":material/insights:", "What are the most interesting patterns?"),
+    "Check data quality": (":material/rule:", "Are there any data quality problems?"),
+    "Suggest charts": (":material/bar_chart:", "Which charts would best show this data?"),
+}
+AVATARS = {"user": ":material/person:", "assistant": ":material/auto_awesome:"}
 SUMMARY_PROMPT = (
     "Give me a short overview of this dataset: what it seems to be about, what each "
     "column contains, key statistics, notable patterns or outliers, and any data quality "
@@ -105,35 +108,36 @@ def stream_answer(client, data_description, messages):
 def show_statistical_insights(df):
     numeric_df = df.select_dtypes(include=["number"])
     if numeric_df.shape[1] < 2:
-        st.info("Not enough numeric columns to look for correlations.")
+        st.caption("Not enough numeric columns to look for correlations.")
         return
     corr_matrix = numeric_df.corr()
-    found_corr = False
+    strong = []
     for i in range(len(corr_matrix.columns)):
         for j in range(i):
-            col_a = corr_matrix.columns[i]
-            col_b = corr_matrix.columns[j]
             val = corr_matrix.iloc[i, j]
             if abs(val) > 0.6:
-                found_corr = True
-                direction = "positive" if val > 0 else "negative"
-                st.success(f"Strong **{direction} correlation** ({val:.2f}) found between **{col_a}** and **{col_b}**.")
-    if not found_corr:
-        st.info("No strong linear correlations (> 0.6 absolute value) detected among numeric columns.")
+                strong.append({
+                    "Columns": f"{corr_matrix.columns[i]} & {corr_matrix.columns[j]}",
+                    "Direction": "Positive" if val > 0 else "Negative",
+                    "Correlation": val,
+                })
+    if not strong:
+        st.caption("No strong linear correlations (above 0.6 either way) among numeric columns.")
+        return
+    st.caption("Pairs of numeric columns that strongly move together (or in opposite directions).")
+    st.dataframe(
+        sorted(strong, key=lambda row: -abs(row["Correlation"])),
+        hide_index=True,
+        width="stretch",
+        column_config={"Correlation": st.column_config.NumberColumn(format="%.2f")},
+    )
 
 
-st.title("💡 AI Dataset Insights")
+page_header("AI Insights", "Ask questions about your data in plain language.")
+df = require_dataset()
 
-if "raw_df" not in st.session_state or st.session_state.raw_df.empty:
-    st.warning("Please upload a dataset on the main Home page first!")
-    st.stop()
-
-df = st.session_state.raw_df
-
-with st.expander("🔍 Quick statistical insights (no AI needed)"):
+with st.expander("Quick statistical insights (no AI needed)", icon=":material/monitoring:"):
     show_statistical_insights(df)
-
-st.subheader("💬 Ask AI about your data")
 
 # A different dataset makes the old conversation meaningless, so start over.
 if st.session_state.get("ai_chat_source") != st.session_state.get("dataset_source"):
@@ -145,7 +149,7 @@ api_key = get_api_key()
 if not api_key:
     st.info(
         "To use the AI chat, enter an **Anthropic API key** in the sidebar.\n\n"
-        "1. Create a key at [console.anthropic.com](https://console.anthropic.com/) → API Keys.\n"
+        "1. Create a key at [console.anthropic.com](https://console.anthropic.com/) under API Keys.\n"
         "2. Paste it into the box in the sidebar.\n\n"
         "To avoid pasting it every time, add `ANTHROPIC_API_KEY = \"your-key\"` to a file named "
         "`.streamlit/secrets.toml` in the project folder."
@@ -159,28 +163,31 @@ if sampled:
 st.caption(caption)
 
 for message in messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+    with st.chat_message(message["role"], avatar=AVATARS[message["role"]]):
+        st.markdown(message.get("display", message["content"]))
 
-question = None
+question = shown_as = None
 if not messages:
-    suggestion_columns = st.columns(len(SUGGESTED_QUESTIONS))
-    for column, suggestion in zip(suggestion_columns, SUGGESTED_QUESTIONS):
-        if column.button(suggestion, width="stretch"):
-            question = SUMMARY_PROMPT if suggestion.startswith("✨") else suggestion
-elif st.button("🗑 Clear chat"):
+    suggestions = st.container(horizontal=True, gap="small")
+    for label, (icon, prompt) in SUGGESTED_QUESTIONS.items():
+        if suggestions.button(label, icon=icon):
+            question, shown_as = prompt or SUMMARY_PROMPT, label
+elif st.button("Clear chat", icon=":material/delete_sweep:"):
     st.session_state.ai_messages = []
     st.rerun()
 
 typed = st.chat_input("Ask a question about your data, e.g. 'Which group has the highest average?'")
-question = typed or question
+if typed:
+    question, shown_as = typed, None
 
 if question:
-    with st.chat_message("user"):
-        st.markdown(question)
-    request_messages = messages + [{"role": "user", "content": question}]
+    with st.chat_message("user", avatar=AVATARS["user"]):
+        st.markdown(shown_as or question)
+    # Only role and content go to the API; "display" is just what this page shows.
+    request_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+    request_messages.append({"role": "user", "content": question})
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=AVATARS["assistant"]):
         client = anthropic.Anthropic(api_key=api_key)
         try:
             answer = st.write_stream(stream_answer(client, data_description, request_messages))
@@ -197,5 +204,5 @@ if question:
         except anthropic.APIConnectionError:
             st.error("Couldn't reach the AI service. Check your internet connection.")
         else:
-            messages.append({"role": "user", "content": question})
+            messages.append({"role": "user", "content": question, "display": shown_as or question})
             messages.append({"role": "assistant", "content": answer})
