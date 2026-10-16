@@ -1,8 +1,10 @@
 """Main entrypoint for the multi-page Streamlit data app."""
 
+import io
+
 import pandas as pd
 import streamlit as st
-from utils import load_data, set_new_dataset
+from utils import SAMPLE_DATASETS, load_data, set_new_dataset
 
 
 st.set_page_config(
@@ -117,7 +119,7 @@ def manual_data_entry() -> None:
     names = [str(value).strip() if pd.notna(value) else "" for value in edited_grid.iloc[0]]
     column_labels = [f"{letter}: {name}" for letter, name in zip(edited_grid.columns, names)]
 
-    row_col, add_col, hide_col, delete_col, clear_col = st.columns(5)
+    row_col, add_col, hide_col, delete_col, paste_col, clear_col = st.columns(6)
 
     with row_col:
         if st.button("＋ Add row", width="stretch"):
@@ -170,6 +172,23 @@ def manual_data_entry() -> None:
             if st.button("Delete", disabled=len(column_labels) <= 1):
                 _commit_manual_grid(edited_grid.drop(columns=[edited_grid.columns[to_delete]]))
 
+    with paste_col:
+        with st.popover("📋 Paste from Excel", width="stretch"):
+            with st.form("paste_manual_data", border=False):
+                st.caption(
+                    "Copy cells in Excel or Google Sheets (Ctrl+C), paste them here (Ctrl+V). "
+                    "This replaces the current table."
+                )
+                pasted = st.text_area("Pasted cells", height=150)
+                has_header = st.checkbox("First line has the column names", value=True)
+                if st.form_submit_button("Load into table"):
+                    pasted_grid = _parse_pasted_cells(pasted, has_header)
+                    if pasted_grid is None:
+                        st.error("Couldn't read any cells. Paste at least one line of data.")
+                    else:
+                        st.session_state.manual_hidden = []
+                        _commit_manual_grid(pasted_grid)
+
     with clear_col:
         with st.popover("🧹 Clear table", width="stretch"):
             st.write("This deletes all data and column names and starts over.")
@@ -196,6 +215,36 @@ def manual_data_entry() -> None:
         st.session_state.manual_pushed_df = analysis_df
 
 
+def _parse_pasted_cells(text: str, has_header: bool) -> pd.DataFrame | None:
+    """Turn cells copied from a spreadsheet (tab-separated) into a manual-entry grid."""
+    if not text.strip():
+        return None
+    separator = "\t" if "\t" in text else ","
+    try:
+        rows = pd.read_csv(
+            io.StringIO(text.strip("\n")),
+            sep=separator,
+            header=None,
+            dtype=str,
+            keep_default_na=False,
+            skip_blank_lines=True,
+        )
+    except (pd.errors.ParserError, pd.errors.EmptyDataError):
+        return None
+    rows = rows.replace("", None)
+    if has_header:
+        names = [
+            str(name).strip() if name else f"Column {position + 1}"
+            for position, name in enumerate(rows.iloc[0])
+        ]
+        body = rows.iloc[1:]
+    else:
+        names = [f"Column {position + 1}" for position in range(len(rows.columns))]
+        body = rows
+    grid = pd.DataFrame([names] + body.values.tolist(), dtype="object")
+    return grid.astype(object).where(grid.notna(), None)
+
+
 def home_page() -> None:
     """Render the home page and dataset uploader."""
     st.title("Welcome to the AI Data Analysis Application 🚀")
@@ -205,7 +254,7 @@ def home_page() -> None:
         st.header("📂 Dataset Management")
         input_method = st.radio(
             "Choose how to provide your data",
-            ["Upload a file", "Enter data manually"],
+            ["Upload a file", "Enter data manually", "Try a sample dataset"],
             key="data_input_method",
         )
 
@@ -230,6 +279,12 @@ def home_page() -> None:
             return
 
         st.success(f"Active File: **{uploaded_file.name}**")
+    elif input_method == "Try a sample dataset":
+        sample_name = st.sidebar.selectbox("Sample dataset", list(SAMPLE_DATASETS))
+        source = f"sample:{sample_name}"
+        if st.session_state.get("dataset_source") != source:
+            set_new_dataset(SAMPLE_DATASETS[sample_name](), source)
+        st.success(f"Active Sample: **{sample_name}**. Open a page from the sidebar to explore it.")
     else:
         manual_data_entry()
         if st.session_state.raw_df.empty:
