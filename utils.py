@@ -3,6 +3,7 @@
 import io
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 MAX_UNDO_STEPS = 20
@@ -26,6 +27,29 @@ def load_data(uploaded_file):
         return pd.read_csv(uploaded_file)
     else:
         return pd.read_excel(uploaded_file)
+
+
+def _students_sample():
+    """small hand-made dataset that mirrors what people type in manually."""
+    return pd.DataFrame(
+        {
+            "faculty": ["Computer Science", "Math", "Biology", "Physics", "Computer Science",
+                        "Math", "Biology", "Physics", "Computer Science", "Biology"],
+            "year": [3, 2, 4, 1, 1, 4, 2, 3, 4, 1],
+            "gpa": [3.6, 3.2, 3.8, 2.9, 3.1, 3.9, 3.4, 3.0, 3.7, 2.8],
+            "study_hours": [20, 15, 25, 10, 12, 28, 18, 14, 24, 9],
+            "city": ["Tbilisi", "Batumi", "Tbilisi", "Kutaisi", "Batumi",
+                     "Tbilisi", "Kutaisi", "Tbilisi", "Batumi", "Tbilisi"],
+        }
+    )
+
+
+SAMPLE_DATASETS = {
+    "🎓 Students (small, simple)": _students_sample,
+    "🍽 Restaurant Tips": px.data.tips,
+    "🌸 Iris Flowers": px.data.iris,
+    "🌍 Gapminder (countries over time)": px.data.gapminder,
+}
 
 
 # ---------------------------------------------------------------------------
